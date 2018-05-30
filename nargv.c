@@ -18,12 +18,10 @@
 #include <stddef.h>
 #include <stdlib.h>
 
-const char *NARGV_IFS = " \t\n";
+#include "nargv.h"
 
-typedef struct NARGV {
-    char **argv, *data, *error_message;
-    int argc, data_length, error_index, error_code;
-} NARGV;
+static const char * const NARGV_DEFAULT_IFS = " \t\n";
+static const char *NARGV_IFS = NARGV_DEFAULT_IFS;
 
 void nargv_free(NARGV* props) {
     free(props->data); free(props->argv);
@@ -32,13 +30,17 @@ void nargv_free(NARGV* props) {
 
 void nargv_ifs(const char *nifs) {
     if (! nifs) {
-        NARGV_IFS = " \t\n";    
-    } else {
-        NARGV_IFS = nifs;
+        if (NARGV_IFS != NARGV_DEFAULT_IFS)
+            free((void *)NARGV_IFS);
+        NARGV_IFS = NARGV_DEFAULT_IFS;
+    } else if (NARGV_IFS != nifs) {
+        if (NARGV_IFS != NARGV_DEFAULT_IFS)
+            free((void *)NARGV_IFS);
+        NARGV_IFS = strdup(nifs);
     }
 }
 
-int nargv_field_seperator(char seperator) {
+static int nargv_field_seperator(char seperator) {
     const char *list = NARGV_IFS;
     if (seperator) {
         while (*list) {
@@ -60,10 +62,7 @@ NARGV *nargv_parse(const char *input) {
     }
 
     /* Get the input length */
-    long input_length = -1;
-    test_next_input_char:
-    if (input[++input_length]) goto test_next_input_char;
-
+    size_t input_length = strlen(input);
     if (! input_length) {
         nvp->error_code = 2;
         nvp->error_message = "cannot parse empty input";
@@ -71,8 +70,8 @@ NARGV *nargv_parse(const char *input) {
     }
 
     int composing_argument = 0;
-    long quote = 0;
-    long index;
+    off_t quote = 0;
+    size_t index;
     char look_ahead;
 
     // FIRST PASS
@@ -118,7 +117,6 @@ NARGV *nargv_parse(const char *input) {
                             nvp->error_code = 3;
                             nvp->error_message = "unterminated double quote";
                             return nvp;                        
-                        break;
                         case '\\':
                             look_ahead = *(input + index + 1);
                             if (look_ahead == '"') {
@@ -133,7 +131,6 @@ NARGV *nargv_parse(const char *input) {
                 }
 
                 continue;
-            break;
 
             /* single quote */
             case '\'':
@@ -150,7 +147,6 @@ NARGV *nargv_parse(const char *input) {
                     nvp->data_length++;
                 }
                 continue;
-            break;
 
         }
 
@@ -212,7 +208,6 @@ NARGV *nargv_parse(const char *input) {
                     nvp->data[data_index++] = input[index];
                 }                
                 continue;
-            break;
 
             /* single quote */
             case '\'':
@@ -221,7 +216,6 @@ NARGV *nargv_parse(const char *input) {
                     nvp->data[data_index++] = input[index];
                 } 
                 continue;
-            break;
 
         }
 
@@ -237,7 +231,7 @@ NARGV *nargv_parse(const char *input) {
 #include <stdio.h>
 int main(int argc, char *argv[]) {
 
-    int arg;
+    size_t arg;
     char line_in[4096];
 
     while (fgets(line_in, 4096, stdin) == line_in) {
